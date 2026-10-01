@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Offensive Message Detector</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: #0f1117;
+    color: #e0e0e0;
+    min-height: 100vh;
+  }
+
+  header {
+    background: linear-gradient(135deg, #1a1d27, #252836);
+    border-bottom: 2px solid #3b82f6;
+    padding: 18px 32px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  header h1 { font-size: 1.4rem; color: #fff; }
+  header .badge {
+    background: #22c55e22;
+    border: 1px solid #22c55e;
+    color: #22c55e;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 28px 20px; }
+
+  /* Stats bar */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 14px;
+    margin-bottom: 28px;
+  }
+  .stat-card {
+    background: #1a1d27;
+    border: 1px solid #2a2d3e;
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+  }
+  .stat-card .num { font-size: 2rem; font-weight: 700; }
+  .stat-card .lbl { font-size: 0.75rem; color: #888; margin-top: 4px; text-transform: uppercase; letter-spacing: .05em; }
+  .stat-card.total .num { color: #60a5fa; }
+  .stat-card.flagged .num { color: #f87171; }
+  .stat-card.cleared .num { color: #4ade80; }
+  .stat-card.high .num { color: #f87171; }
+  .stat-card.medium .num { color: #fbbf24; }
+
+  /* Input panel */
+  .input-panel {
+    background: #1a1d27;
+    border: 1px solid #2a2d3e;
+    border-radius: 12px;
+    padding: 22px;
+    margin-bottom: 28px;
+  }
+  .input-panel h2 { font-size: 1rem; color: #a0a0b0; margin-bottom: 16px; }
+  .input-row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .input-row textarea {
+    flex: 1;
+    min-width: 260px;
+    background: #0f1117;
+    border: 1px solid #3a3d50;
+    border-radius: 8px;
+    color: #e0e0e0;
+    padding: 12px;
+    font-size: 0.95rem;
+    resize: vertical;
+    min-height: 56px;
+    outline: none;
+    transition: border-color .2s;
+  }
+  .input-row textarea:focus { border-color: #3b82f6; }
+  .side-fields { display: flex; flex-direction: column; gap: 8px; min-width: 160px; }
+  .side-fields input, .side-fields select {
+    background: #0f1117;
+    border: 1px solid #3a3d50;
+    border-radius: 8px;
+    color: #e0e0e0;
+    padding: 9px 12px;
+    font-size: 0.88rem;
+    outline: none;
+  }
+  .side-fields input:focus, .side-fields select:focus { border-color: #3b82f6; }
+  #analyzeBtn {
+    background: #3b82f6;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 0 26px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    min-width: 110px;
+    transition: background .2s;
+  }
+  #analyzeBtn:hover { background: #2563eb; }
+  #analyzeBtn:disabled { background: #374151; cursor: not-allowed; }
+
+  /* Toast */
+  #toast {
+    display: none;
+    position: fixed;
+    top: 20px; right: 20px;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    z-index: 999;
+    animation: fadeIn .3s;
+  }
+  #toast.offensive { background: #7f1d1d; border: 1px solid #f87171; color: #fca5a5; }
+  #toast.normal    { background: #14532d; border: 1px solid #4ade80; color: #86efac; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* Results table */
+  .results-panel {
+    background: #1a1d27;
+    border: 1px solid #2a2d3e;
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .results-panel h2 {
+    font-size: 1rem;
+    color: #a0a0b0;
+    padding: 16px 22px;
+    border-bottom: 1px solid #2a2d3e;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .results-panel h2 button {
+    background: #252836;
+    border: 1px solid #3a3d50;
+    color: #888;
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+  .results-panel h2 button:hover { border-color: #f87171; color: #f87171; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    text-align: left;
+    padding: 10px 16px;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: #555;
+    background: #13151f;
+    border-bottom: 1px solid #2a2d3e;
+  }
+  td { padding: 12px 16px; font-size: 0.88rem; border-bottom: 1px solid #1e2130; vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr { transition: background .15s; }
+  tr:hover td { background: #1e2233; }
+
+  .badge-offensive {
+    background: #7f1d1d44;
+    border: 1px solid #f87171;
+    color: #f87171;
+    padding: 2px 9px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+  .badge-normal {
+    background: #14532d44;
+    border: 1px solid #4ade80;
+    color: #4ade80;
+    padding: 2px 9px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+  .sev-high   { color: #f87171; font-weight: 700; }
+  .sev-medium { color: #fbbf24; font-weight: 700; }
+  .sev-low    { color: #60a5fa; font-weight: 700; }
+  .sev-none   { color: #4ade80; }
+
+  .conf-bar-wrap { width: 80px; background: #0f1117; border-radius: 4px; height: 6px; display: inline-block; vertical-align: middle; margin-right: 6px; }
+  .conf-bar { height: 6px; border-radius: 4px; }
+
+  .text-cell { max-width: 340px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  #emptyState { text-align: center; padding: 48px; color: #444; }
+  #emptyState .icon { font-size: 2.5rem; margin-bottom: 10px; }
+
+  .loader {
+    display: inline-block;
+    width: 16px; height: 16px;
+    border: 2px solid #3b82f6;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin .6s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  footer { text-align: center; color: #333; font-size: 0.78rem; padding: 24px; }
+
+  /* Chatbot styles */
+  #chatLauncher {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    width: 60px;
+    height: 60px;
+    background: #3b82f6;
+    color: #fff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.8rem;
+    cursor: pointer;
+    box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
+    z-index: 1000;
+    transition: transform .3s ease, background .3s;
+  }
+  #chatLauncher:hover {
+    transform: scale(1.1) rotate(10deg);
+    background: #2563eb;
+  }
+  #chatLauncher.open {
+    transform: scale(0.9) rotate(-45deg);
+    background: #ef4444;
+    box-shadow: 0 4px 15px rgba(239, 68, 68, 0.4);
+  }
+
+  #chatWindow {
+    display: none;
+    position: fixed;
+    bottom: 100px;
+    right: 30px;
+    width: 380px;
+    height: 520px;
+    background: rgba(26, 29, 39, 0.95);
+    backdrop-filter: blur(10px);
+    border: 1px solid #2a2d3e;
+    border-radius: 16px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    flex-direction: column;
+    overflow: hidden;
+    transform: translateY(20px);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
+  }
+  #chatWindow.visible {
+    transform: translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  #chatHeader {
+    background: linear-gradient(135deg, #1e2233, #2a2d3e);
+    border-bottom: 1px solid #3b82f633;
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  #chatHeader h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #fff;
+    flex-grow: 1;
+  }
+  #chatHeader .bot-status {
+    width: 8px;
+    height: 8px;
+    background: #22c55e;
+    border-radius: 50%;
+    box-shadow: 0 0 8px #22c55e;
+  }
+
+  #chatMessages {
+    flex-grow: 1;
+    padding: 16px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    scroll-behavior: smooth;
+  }
+
+  .chat-msg {
+    max-width: 85%;
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    word-break: break-word;
+  }
+  .chat-msg.bot {
+    align-self: flex-start;
+    background: #252836;
+    border: 1px solid #2a2d3e;
+    color: #e0e0e0;
+    border-bottom-left-radius: 2px;
+  }
+  .chat-msg.user {
+    align-self: flex-end;
+    background: #3b82f6;
+    color: #fff;
+    border-bottom-right-radius: 2px;
+  }
+
+  .chat-msg p {
+    margin-bottom: 6px;
+  }
+  .chat-msg p:last-child {
+    margin-bottom: 0;
+  }
+  .chat-msg ul {
+    margin-left: 18px;
+    margin-bottom: 6px;
+  }
+  .chat-msg li {
+    margin-bottom: 4px;
+  }
+
+  #chatChips {
+    display: flex;
+    gap: 8px;
+    padding: 8px 16px;
+    overflow-x: auto;
+    border-top: 1px solid #1e2130;
+    white-space: nowrap;
+  }
+  #chatChips::-webkit-scrollbar {
+    height: 4px;
+  }
+  #chatChips::-webkit-scrollbar-thumb {
+    background: #2a2d3e;
+    border-radius: 4px;
+  }
+  .chip {
+    background: #1e2130;
+    border: 1px solid #2a2d3e;
+    color: #9ca3af;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .chip:hover {
+    border-color: #3b82f6;
+    color: #3b82f6;
+    background: #3b82f611;
+  }
+
+  #chatInputArea {
+    padding: 12px 16px;
+    background: #13151f;
+    border-top: 1px solid #2a2d3e;
+    display: flex;
+    gap: 8px;
+  }
+  #chatInput {
+    flex-grow: 1;
+    background: #0f1117;
+    border: 1px solid #2a2d3e;
+    border-radius: 8px;
+    color: #fff;
+    padding: 8px 12px;
+    font-size: 0.88rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  #chatInput:focus {
+    border-color: #3b82f6;
+  }
+  #chatSendBtn {
+    background: #3b82f6;
+    border: none;
+    color: #fff;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  #chatSendBtn:hover {
+    background: #2563eb;
+  }
+
+  /* Typing animation */
+  .typing-dots {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 12px;
+  }
+  .typing-dots span {
+    width: 6px;
+    height: 6px;
+    background: #888;
+    border-radius: 50%;
+    animation: bounce .6s infinite alternate;
+  }
+  .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes bounce { to { transform: translateY(-4px); opacity: 0.4; } }
+  .threshold-row {
+    margin-top: 14px; display: flex; align-items: center; gap: 12px;
+    flex-wrap: wrap; font-size: .8rem; color: #a0a0b0;
+  }
+  .threshold-row input[type=range] { flex: 1; min-width: 160px; accent-color: #3b82f6; }
+  .threshold-row #threshVal { color: #60a5fa; font-weight: 700; }
+  .hint { color: #6b7280; font-size: .75rem; }
+  .mini-btn {
+    background: #1e2430; border: 1px solid #3b82f6; color: #60a5fa;
+    padding: 3px 10px; border-radius: 6px; font-size: .72rem; cursor: pointer;
+    margin-left: 10px;
+  }
+  .mini-btn:hover { background: #232a3a; }
+  .factor-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+  .factor-chip {
+    font-size: .68rem; padding: 1px 7px; border-radius: 10px;
+    background: #f8717122; border: 1px solid #f8717155; color: #fca5a5;
+  }
+  .bias-table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+  .bias-table td { padding: 6px 8px; border-bottom: 1px solid #232838; }
+  .bias-table .b-off { color: #f87171; font-weight: 600; }
+  .bias-table .b-norm { color: #4ade80; font-weight: 600; }
+  .bias-table .b-prob { color: #888; text-align: right; }
+</style>
+</head>
+<body>
+
+<header>
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+  <h1>Offensive Message Detector</h1>
+  <span class="badge" id="svcStatus">● LIVE</span>
+</header>
+
+<div class="container">
+
+  <!-- Stats -->
+  <div class="stats-grid">
+    <div class="stat-card total">
+      <div class="num" id="s-total">0</div>
+      <div class="lbl">Total Analyzed</div>
+    </div>
+    <div class="stat-card flagged">
+      <div class="num" id="s-off">0</div>
+      <div class="lbl">Flagged</div>
+    </div>
+    <div class="stat-card cleared">
+      <div class="num" id="s-norm">0</div>
+      <div class="lbl">Cleared</div>
+    </div>
+    <div class="stat-card high">
+      <div class="num" id="s-high">0</div>
+      <div class="lbl">High Severity</div>
+    </div>
+    <div class="stat-card medium">
+      <div class="num" id="s-med">0</div>
+      <div class="lbl">Medium Severity</div>
+    </div>
+  </div>
+
+  <!-- Input -->
+  <div class="input-panel">
+    <h2>Submit a message for analysis</h2>
+    <div class="input-row">
+      <textarea id="msgText" placeholder="Type or paste a social media message here…" rows="2"></textarea>
+      <div class="side-fields">
+        <input id="msgAuthor" placeholder="Author / username" value="user123">
+        <select id="msgPlatform">
+          <option value="twitter">Twitter</option>
+          <option value="facebook">Facebook</option>
+          <option value="instagram">Instagram</option>
+          <option value="youtube">YouTube</option>
+          <option value="tiktok">TikTok</option>
+        </select>
+      </div>
+      <button id="analyzeBtn" onclick="analyze()">Analyze</button>
+    </div>
+    <div class="threshold-row">
+      <label for="threshold">Decision threshold:
+        <span id="threshVal">0.50</span></label>
+      <input type="range" id="threshold" min="0.05" max="0.95" step="0.05" value="0.50"
+             oninput="document.getElementById('threshVal').textContent = (+this.value).toFixed(2)">
+      <span class="hint">Lower = catch more (higher recall) · Higher = fewer false alarms (higher precision)</span>
+    </div>
+  </div>
+
+  <!-- Bias / fairness probe -->
+  <div class="input-panel">
+    <h2>Model transparency &amp; bias probe
+      <button class="mini-btn" onclick="runBiasProbe()">Run probe</button>
+    </h2>
+    <p class="hint" style="margin-bottom:10px">Runs a fixed set of phrases — some abusive, some merely informal — to reveal where the model over- or under-reacts. Uses the slider threshold above.</p>
+    <div id="biasWrap"><div class="hint">Click “Run probe” to see how the model treats borderline language.</div></div>
+  </div>
+
+
+  <!-- Results -->
+  <div class="results-panel">
+    <h2>
+      Results
+      <button onclick="clearResults()">Clear all</button>
+    </h2>
+    <div id="tableWrap">
+      <div id="emptyState">
+        <div class="icon">🛡️</div>
+        Submit a message above to see the analysis
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div id="toast"></div>
+
+<!-- Chatbot Floating UI -->
+<div id="chatLauncher" onclick="toggleChat()">💬</div>
+<div id="chatWindow">
+  <div id="chatHeader">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    <h3>AI System Assistant</h3>
+    <div class="bot-status" title="Active"></div>
+  </div>
+  <div id="chatMessages">
+    <div class="chat-msg bot">
+      <p>Hello! I am your AI assistant. I can help you check system stats, analyze custom messages, or answer questions about the system.</p>
+    </div>
+  </div>
+  <div id="chatChips">
+    <div class="chip" onclick="sendChip('Show stats')">📊 Show stats</div>
+    <div class="chip" onclick="sendChip('How it works')">⚙️ How it works</div>
+    <div class="chip" onclick="sendChip('What can you do?')">💡 What can you do?</div>
+  </div>
+  <div id="chatInputArea">
+    <input type="text" id="chatInput" placeholder="Ask a question or type 'analyze [msg]'..." onkeydown="handleChatKey(event)">
+    <button id="chatSendBtn" onclick="sendChatMsg()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </div>
+</div>
+
+<footer>Java API · Python ML · MongoDB &nbsp;|&nbsp; Offensive Message Detection System</footer>
+
+<script>
+const API = 'http://localhost:8080/api';
+const ML  = 'http://localhost:5001/api/ml';
+let results = [];
+
+function currentThreshold() {
+  return parseFloat(document.getElementById('threshold').value) || 0.5;
+}
+
+async function analyze() {
+  const text     = document.getElementById('msgText').value.trim();
+  const author   = document.getElementById('msgAuthor').value.trim() || 'anonymous';
+  const platform = document.getElementById('msgPlatform').value;
+
+  if (!text) { alert('Please enter a message.'); return; }
+
+  const btn = document.getElementById('analyzeBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="loader"></span>Analyzing…';
+
+  try {
+    const res = await fetch(`${API}/messages/analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, author, platform })
+    });
+    const data = await res.json();
+
+    // Fetch per-word explanation + threshold-aware verdict from the ML service.
+    // (Best-effort: the row still renders if the ML service is unreachable.)
+    try {
+      const ex = await fetch(`${ML}/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, threshold: currentThreshold() })
+      }).then(r => r.json());
+      data.top_factors = ex.top_factors || [];
+      data.ml_probability = ex.offensive_probability;
+    } catch (_) { /* ML detail is optional */ }
+
+    results.unshift(data);
+    renderTable();
+    showToast(data);
+    loadStats();
+    document.getElementById('msgText').value = '';
+  } catch(e) {
+    alert('Cannot reach the Java API at localhost:8080. Make sure the server is running.');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = 'Analyze';
+  }
+}
+
+function renderTable() {
+  if (!results.length) {
+    document.getElementById('tableWrap').innerHTML =
+      '<div id="emptyState"><div class="icon">🛡️</div>Submit a message above to see the analysis</div>';
+    return;
+  }
+  let rows = results.map(r => {
+    const offensive = r.isOffensive === true || r.offensive === true;
+    const conf    = Math.round((r.confidence || 0) * 100);
+    const barCol  = offensive ? '#f87171' : '#4ade80';
+    const sevCls  = `sev-${r.severity || 'none'}`;
+    const labBadge = offensive
+      ? '<span class="badge-offensive">🚨 OFFENSIVE</span>'
+      : '<span class="badge-normal">✅ NORMAL</span>';
+    const factors = (r.top_factors && r.top_factors.length)
+      ? `<div class="factor-chips">` +
+          r.top_factors.map(f => `<span class="factor-chip" title="weight ${f.weight}">${esc(f.token)}</span>`).join('') +
+        `</div>`
+      : '';
+    return `<tr>
+      <td>${labBadge}</td>
+      <td class="text-cell" title="${esc(r.text)}">${esc(r.text)}${factors}</td>
+      <td>${esc(r.platform||'')}</td>
+      <td>${esc(r.author||'')}</td>
+      <td>
+        <span class="conf-bar-wrap"><span class="conf-bar" style="width:${conf}%;background:${barCol}"></span></span>
+        ${conf}%
+      </td>
+      <td class="${sevCls}">${(r.severity||'none').toUpperCase()}</td>
+      <td style="color:#555;font-size:.8rem">${new Date(r.createdAt).toLocaleTimeString()}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('tableWrap').innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Label</th><th>Message · why flagged</th><th>Platform</th>
+        <th>Author</th><th>Confidence</th><th>Severity</th><th>Time</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+async function runBiasProbe() {
+  const wrap = document.getElementById('biasWrap');
+  wrap.innerHTML = '<div class="hint">Running probe…</div>';
+  try {
+    const data = await fetch(`${ML}/bias-probe?threshold=${currentThreshold()}`).then(r => r.json());
+    const rows = data.results.map(r => {
+      const cls = r.label === 'offensive' ? 'b-off' : 'b-norm';
+      const tag = r.label === 'offensive' ? '🚨 OFFENSIVE' : '✅ NORMAL';
+      return `<tr>
+        <td>${esc(r.text)}</td>
+        <td class="${cls}">${tag}</td>
+        <td class="b-prob">${Math.round(r.offensive_probability*100)}%</td>
+      </tr>`;
+    }).join('');
+    wrap.innerHTML = `<table class="bias-table"><tbody>${rows}</tbody></table>
+      <p class="hint" style="margin-top:8px">Threshold ${(+data.threshold).toFixed(2)}. Watch how informal phrases (“crazy”, “damn”) can be over-flagged — a real limitation worth discussing.</p>`;
+  } catch (e) {
+    wrap.innerHTML = '<div class="hint">Cannot reach the ML service at localhost:5001.</div>';
+  }
+}
+
+async function loadStats() {
+  try {
+    const s = await fetch(`${API}/messages/stats`).then(r => r.json());
+    document.getElementById('s-total').textContent = s.total || 0;
+    document.getElementById('s-off').textContent   = s.offensive || 0;
+    document.getElementById('s-norm').textContent  = s.normal || 0;
+    document.getElementById('s-high').textContent  = (s.bySeverity||{}).high || 0;
+    document.getElementById('s-med').textContent   = (s.bySeverity||{}).medium || 0;
+  } catch(_) {}
+}
+
+function showToast(data) {
+  const t = document.getElementById('toast');
+  const offensive = data.isOffensive === true || data.offensive === true;
+  t.className = offensive ? 'offensive' : 'normal';
+  t.textContent = offensive
+    ? `🚨 FLAGGED — ${data.severity?.toUpperCase()} severity (${Math.round(data.confidence*100)}% confidence)`
+    : `✅ CLEARED — Message appears normal (${Math.round(data.confidence*100)}% confidence)`;
+  t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 4000);
+}
+
+async function clearResults() {
+  results = [];
+  renderTable();
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Allow Ctrl+Enter to submit
+document.getElementById('msgText').addEventListener('keydown', e => {
+  if (e.ctrlKey && e.key === 'Enter') analyze();
+});
+
+// Initial stats load
+loadStats();
+
+// Chatbot functionality
+function toggleChat() {
+  const win = document.getElementById('chatWindow');
+  const launcher = document.getElementById('chatLauncher');
+  const isOpen = win.classList.contains('visible');
+  
+  if (isOpen) {
+    win.classList.remove('visible');
+    launcher.classList.remove('open');
+    launcher.textContent = '💬';
+    setTimeout(() => { win.style.display = 'none'; }, 300);
+  } else {
+    win.style.display = 'flex';
+    setTimeout(() => {
+      win.classList.add('visible');
+      launcher.classList.add('open');
+      launcher.textContent = '✕';
+    }, 10);
+  }
+}
+
+function handleChatKey(e) {
+  if (e.key === 'Enter') sendChatMsg();
+}
+
+function sendChip(text) {
+  document.getElementById('chatInput').value = text;
+  sendChatMsg();
+}
+
+function formatReply(text) {
+  let lines = text.split('\n');
+  let formatted = [];
+  let inList = false;
+  
+  for (let line of lines) {
+    let trimmed = line.trim();
+    if (trimmed.startsWith('• ')) {
+      if (!inList) {
+        formatted.push('<ul>');
+        inList = true;
+      }
+      let content = parseBoldItalic(trimmed.substring(2));
+      formatted.push(`<li>${content}</li>`);
+    } else {
+      if (inList) {
+        formatted.push('</ul>');
+        inList = false;
+      }
+      if (trimmed === '') {
+        formatted.push('<br>');
+      } else {
+        formatted.push(`<p>${parseBoldItalic(line)}</p>`);
+      }
+    }
+  }
+  if (inList) {
+    formatted.push('</ul>');
+  }
+  return formatted.join('');
+}
+
+function parseBoldItalic(text) {
+  let t = esc(text);
+  t = t.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  t = t.replace(/\*(.*?)\*/g, '<em>$1</em>');
+  return t;
+}
+
+async function sendChatMsg() {
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if (!text) return;
+  
+  input.value = '';
+  
+  // Render user message
+  const msgs = document.getElementById('chatMessages');
+  const userBubble = document.createElement('div');
+  userBubble.className = 'chat-msg user';
+  userBubble.textContent = text;
+  msgs.appendChild(userBubble);
+  msgs.scrollTop = msgs.scrollHeight;
+  
+  // Render typing indicator
+  const typingBubble = document.createElement('div');
+  typingBubble.className = 'chat-msg bot';
+  typingBubble.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div>';
+  msgs.appendChild(typingBubble);
+  msgs.scrollTop = msgs.scrollHeight;
+  
+  try {
+    const res = await fetch('http://localhost:8080/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text })
+    });
+    const data = await res.json();
+    
+    // Remove typing indicator
+    if (msgs.contains(typingBubble)) {
+      msgs.removeChild(typingBubble);
+    }
+    
+    // Render response
+    const botBubble = document.createElement('div');
+    botBubble.className = 'chat-msg bot';
+    botBubble.innerHTML = formatReply(data.reply || '');
+    msgs.appendChild(botBubble);
+    
+    // Update chips if suggestions are present
+    const chipsDiv = document.getElementById('chatChips');
+    if (data.suggestions && data.suggestions.length) {
+      chipsDiv.innerHTML = data.suggestions.map(s => {
+        let icon = '💡';
+        if (s.toLowerCase().includes('stats')) icon = '📊';
+        else if (s.toLowerCase().includes('works')) icon = '⚙️';
+        return `<div class="chip" onclick="sendChip('${s}')">${icon} ${s}</div>`;
+      }).join('');
+    }
+    
+    msgs.scrollTop = msgs.scrollHeight;
+  } catch(e) {
+    if (msgs.contains(typingBubble)) {
+      msgs.removeChild(typingBubble);
+    }
+    const errBubble = document.createElement('div');
+    errBubble.className = 'chat-msg bot';
+    errBubble.style.borderColor = '#ef4444';
+    errBubble.style.color = '#fca5a5';
+    errBubble.textContent = 'Unable to reach the AI assistant service. Please check if the Java backend is running.';
+    msgs.appendChild(errBubble);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+}
+</script>
+</body>
+</html>
